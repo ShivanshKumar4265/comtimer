@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StudyTogether</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ================= LANDING SCREEN ================= -->
+  <div id="landing-screen" class="screen">
+    <h1>StudyTogether</h1>
+    <p class="subtitle">A shared study timer for you and a friend.</p>
+
+    <div class="landing-card">
+      <h2>Create a new room</h2>
+      <input type="text" id="create-name" placeholder="Your name" maxlength="20">
+      <button id="create-room-btn" class="primary-btn">Create Room</button>
+    </div>
+
+    <div class="landing-card">
+      <h2>Join a room</h2>
+      <input type="text" id="join-code" placeholder="Room code" maxlength="6" style="text-transform:uppercase">
+      <input type="text" id="join-name" placeholder="Your name" maxlength="20">
+      <button id="join-room-btn" class="primary-btn">Join Room</button>
+    </div>
+
+    <p id="landing-error" class="error-text"></p>
+  </div>
+
+  <!-- ================= ROOM CODE CONFIRMATION (shown once, right after creating) ================= -->
+  <div id="code-screen" class="screen hidden">
+    <h2>Your room code</h2>
+    <div id="room-code-display" class="room-code"></div>
+    <button id="copy-code-btn" class="secondary-btn">Copy Code</button>
+    <p>Share this code with your study partner, then continue.</p>
+    <button id="continue-to-dashboard-btn" class="primary-btn">Continue</button>
+  </div>
+
+  <!-- ================= DASHBOARD ================= -->
+  <div id="dashboard-screen" class="screen hidden">
+    <header class="dashboard-header">
+      <div>Room: <strong id="header-room-code"></strong></div>
+      <button id="leave-room-btn" class="link-btn">Leave room</button>
+    </header>
+
+    <div class="timer-grid">
+      <div class="timer-card" id="my-timer-card">
+        <h3 id="my-timer-name">My Timer</h3>
+        <div class="timer-display" id="my-timer-display">00:00:00</div>
+        <div class="timer-status" id="my-timer-status">Not studying</div>
+      </div>
+      <div class="timer-card friend" id="friend-timer-card">
+        <h3 id="friend-timer-name">Friend Timer</h3>
+        <div class="timer-display" id="friend-timer-display">00:00:00</div>
+        <div class="timer-status" id="friend-timer-status">Waiting for friend to join...</div>
+      </div>
+    </div>
+
+    <button id="toggle-timer-btn" class="primary-btn">Start Studying</button>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="mine">My Log</button>
+      <button class="tab-btn" data-tab="friend">Friend Log</button>
+    </div>
+
+    <div class="filter-row">
+      <label for="date-filter">Filter by date:</label>
+      <input type="date" id="date-filter">
+      <button id="clear-filter-btn" class="link-btn">Clear</button>
+    </div>
+
+    <div id="logs-list" class="logs-list"></div>
+
+    <div id="total-banner" class="total-banner">Total: 0h 0m</div>
+  </div>
+
+  <!-- ================= NOTE MODAL (shown right after stopping a timer) ================= -->
+  <div id="note-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Session finished</h3>
+      <p id="modal-duration-text"></p>
+
+      <label class="radio-label">
+        <input type="radio" name="session-type" value="study" checked> Study session
+      </label>
+      <label class="radio-label">
+        <input type="radio" name="session-type" value="break"> Break
+      </label>
+
+      <textarea id="note-input" placeholder="What did you study? (optional)" rows="3"></textarea>
+
+      <div class="modal-actions">
+        <button id="skip-note-btn" class="secondary-btn">Skip</button>
+        <button id="save-note-btn" class="primary-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK (compat build: works with plain <script> tags, no bundler/build step needed) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
