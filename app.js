@@ -199,23 +199,73 @@ function attachRoomListener() {
   });
 }
 
+// function renderTimers() {
+//   const mine = state.room[state.mySlot];
+//   const friend = state.room[state.friendSlot];
+
+//   el('my-timer-name').textContent = mine ? `My Timer (${mine.name})` : 'My Timer';
+//   el('friend-timer-name').textContent = friend ? `Friend Timer (${friend.name})` : 'Friend Timer';
+
+//   el('friend-timer-status').textContent = friend
+//     ? (friend.isRunning ? 'Studying now' : 'Not studying')
+//     : 'Waiting for friend to join...';
+//   el('my-timer-status').textContent = (mine && mine.isRunning) ? 'Studying now' : 'Not studying';
+
+//   el('toggle-timer-btn').textContent = (mine && mine.isRunning) ? 'Stop Studying' : 'Start Studying';
+
+//   tickTimers();
+// }
+
+
 function renderTimers() {
   const mine = state.room[state.mySlot];
   const friend = state.room[state.friendSlot];
 
-  el('my-timer-name').textContent = mine ? `My Timer (${mine.name})` : 'My Timer';
-  el('friend-timer-name').textContent = friend ? `Friend Timer (${friend.name})` : 'Friend Timer';
+  // 1. Elegant Naming
+  el('my-timer-name').textContent = mine ? `${mine.name} (You)` : 'You';
+  el('friend-timer-name').textContent = friend ? friend.name : 'Friend';
 
-  el('friend-timer-status').textContent = friend
-    ? (friend.isRunning ? 'Studying now' : 'Not studying')
-    : 'Waiting for friend to join...';
-  el('my-timer-status').textContent = (mine && mine.isRunning) ? 'Studying now' : 'Not studying';
+  const myStatusEl = el('my-timer-status');
+  const friendStatusEl = el('friend-timer-status');
+  const myCardEl = el('my-timer-card');
+  const friendCardEl = el('friend-timer-card');
 
-  el('toggle-timer-btn').textContent = (mine && mine.isRunning) ? 'Stop Studying' : 'Start Studying';
+  // 2. Friend's Status
+  if (friend && friend.isRunning) {
+    friendStatusEl.textContent = 'Focusing';
+    friendStatusEl.className = 'timer-status status-active';
+    friendCardEl.classList.add('is-running');
+  } else {
+    friendStatusEl.textContent = friend ? 'Resting' : 'Waiting...';
+    friendStatusEl.className = 'timer-status status-idle';
+    friendCardEl.classList.remove('is-running');
+  }
+
+  // 3. Your Status
+  if (mine && mine.isRunning) {
+    myStatusEl.textContent = 'Focusing';
+    myStatusEl.className = 'timer-status status-active';
+    myCardEl.classList.add('is-running');
+  } else {
+    myStatusEl.textContent = 'Resting';
+    myStatusEl.className = 'timer-status status-idle';
+    myCardEl.classList.remove('is-running');
+  }
+
+  // 4. Main Action Button
+  const btn = el('toggle-timer-btn');
+  if (mine && mine.isRunning) {
+    btn.textContent = 'Pause Session';
+    btn.classList.add('danger-btn');
+    btn.classList.remove('primary-btn');
+  } else {
+    btn.textContent = 'Start Session';
+    btn.classList.remove('danger-btn');
+    btn.classList.add('primary-btn');
+  }
 
   tickTimers();
 }
-
 function tickTimers() {
   updateTimerDisplay('my-timer-display', state.room[state.mySlot]);
   updateTimerDisplay('friend-timer-display', state.room[state.friendSlot]);
