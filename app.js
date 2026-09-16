@@ -63,7 +63,7 @@ function showScreen(id) {
 }
 function showError(msg) { el('landing-error').textContent = msg; }
 
-// ====== Session persistence (this is the "no login" identity system) ======
+// ====== Session persistence ======
 function saveSession(roomCode, slot) {
   localStorage.setItem(SESSION_KEY, JSON.stringify({ roomCode, slot }));
 }
@@ -80,7 +80,7 @@ function leaveRoom() {
 
 // ====== Create / Join room ======
 function generateRoomCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 0/O/1/I removed to avoid confusion
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; 
   let code = '';
   for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
@@ -241,15 +241,13 @@ function formatDuration(ms) {
   return `${h}:${m}:${s}`;
 }
 
-// ====== Start / Stop (only ever controls YOUR OWN timer) ======
+// ====== Start / Stop ======
 function toggleMyTimer() {
   const mine = state.room[state.mySlot];
   const myRef = db.ref('rooms/' + state.roomCode + '/' + state.mySlot);
   const today = dateKey(Date.now());
 
   if (!mine || !mine.isRunning) {
-    // Starting: pick up right where today's accumulated total left off.
-    // (If the last accumulation was on an earlier day, start today at zero.)
     const carryOverMs = (mine && mine.accumulatedDate === today) ? (mine.accumulatedMs || 0) : 0;
     myRef.update({ isRunning: true, startedAt: Date.now(), accumulatedMs: carryOverMs, accumulatedDate: today });
   } else {
@@ -259,8 +257,6 @@ function toggleMyTimer() {
     const priorAccumulated = (mine.accumulatedDate === today) ? (mine.accumulatedMs || 0) : 0;
     const newAccumulated = priorAccumulated + segmentMs;
 
-    // Stop the clock immediately for both users. The cumulative total is
-    // saved here, so the next Start press continues from this exact point.
     myRef.update({ isRunning: false, startedAt: null, accumulatedMs: newAccumulated, accumulatedDate: today });
 
     pendingStop = { startedAt, endedAt };
@@ -355,7 +351,7 @@ function getFilteredLogs() {
   const owner = state.activeTab === 'mine' ? state.mySlot : state.friendSlot;
   let list = Object.values(state.logs).filter(l => l.owner === owner);
   if (state.dateFilter) list = list.filter(l => l.date === state.dateFilter);
-  list.sort((a, b) => a.startTime - b.startTime); // ascending, so "Log 1" is always the earliest
+  list.sort((a, b) => a.startTime - b.startTime);
   return list;
 }
 
@@ -367,23 +363,48 @@ function renderLogs() {
   if (list.length === 0) {
     container.innerHTML = '<div class="empty-state">No sessions yet — tap Start to begin your first one.</div>';
   } else {
-    // Show most recent first, but keep numbering based on chronological order.
     [...list].reverse().forEach((entry) => {
       const logNumber = list.indexOf(entry) + 1;
       const div = document.createElement('div');
       div.className = 'log-entry';
       const timeRange = formatTime(entry.startTime) + ' \u2013 ' + formatTime(entry.endTime);
+      
+      // Updated HTML structure to include the read more/less logic
       div.innerHTML = `
         <div class="log-top">
           <span class="log-title">Log ${logNumber}</span>
           <span class="log-date">${entry.date}</span>
           <span class="log-duration">${formatHMS(entry.durationSeconds)}</span>
         </div>
-        <div class="log-meta">${escapeHtml(entry.note || '(no note)')}</div>
+        <div class="log-note-wrapper">
+          <div class="log-note">${escapeHtml(entry.note || '(no note)')}</div>
+          <button class="link-btn read-more-btn hidden" style="padding: 0; margin-top: 4px; font-size: 13px; min-height: auto;">Read more</button>
+        </div>
         <div class="log-meta">${timeRange} \u00b7 ${entry.type === 'break' ? 'Break' : 'Study'}</div>
       `;
       container.appendChild(div);
+
+      // Handle the Read More click logic
+      const noteEl = div.querySelector('.log-note');
+      const btnEl = div.querySelector('.read-more-btn');
+
+      btnEl.addEventListener('click', () => {
+        noteEl.classList.toggle('expanded');
+        btnEl.textContent = noteEl.classList.contains('expanded') ? 'Read less' : 'Read more';
+      });
     });
+
+    // Check heights AFTER appending to DOM to see if text is overflowing
+    setTimeout(() => {
+      container.querySelectorAll('.log-entry').forEach(div => {
+        const noteEl = div.querySelector('.log-note');
+        const btnEl = div.querySelector('.read-more-btn');
+        // If the actual scrollable height is taller than the visible clamped height, show the button
+        if (noteEl.scrollHeight > noteEl.clientHeight) {
+          btnEl.classList.remove('hidden');
+        }
+      });
+    }, 0);
   }
 
   renderTotal(list);
