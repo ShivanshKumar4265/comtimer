@@ -221,19 +221,16 @@ function tickTimers() {
   updateTimerDisplay('friend-timer-display', state.room[state.friendSlot]);
 }
 
+function computeElapsedMs(userData) {
+  if (!userData) return 0;
+  const base = userData.accumulatedMs || 0;
+  return (userData.isRunning && userData.startedAt) ? base + (Date.now() - userData.startedAt) : base;
+}
+
 function updateTimerDisplay(elementId, userData) {
   const node = el(elementId);
   if (!node) return;
-  if (userData && userData.isRunning && userData.startedAt) {
-    // Currently running: count up live.
-    node.textContent = formatDuration(Date.now() - userData.startedAt);
-  } else if (userData && userData.lastDurationMs) {
-    // Stopped: stay frozen on the last completed session's time, instead of
-    // snapping back to 00:00:00. It only resets once a new session starts.
-    node.textContent = formatDuration(userData.lastDurationMs);
-  } else {
-    node.textContent = '00:00:00';
-  }
+  node.textContent = formatDuration(computeElapsedMs(userData));
 }
 
 function formatDuration(ms) {
@@ -248,19 +245,26 @@ function formatDuration(ms) {
 function toggleMyTimer() {
   const mine = state.room[state.mySlot];
   const myRef = db.ref('rooms/' + state.roomCode + '/' + state.mySlot);
+  const today = dateKey(Date.now());
 
   if (!mine || !mine.isRunning) {
-    // Starting a new session always begins counting from zero.
-    myRef.update({ isRunning: true, startedAt: Date.now(), lastDurationMs: null });
+    // Starting: pick up right where today's accumulated total left off.
+    // (If the last accumulation was on an earlier day, start today at zero.)
+    const carryOverMs = (mine && mine.accumulatedDate === today) ? (mine.accumulatedMs || 0) : 0;
+    myRef.update({ isRunning: true, startedAt: Date.now(), accumulatedMs: carryOverMs, accumulatedDate: today });
   } else {
     const startedAt = mine.startedAt;
     const endedAt = Date.now();
-    const durationMs = endedAt - startedAt;
-    // Stop the clock immediately for both users, but keep showing the final
-    // time on-screen (frozen) instead of jumping back to 00:00:00.
-    myRef.update({ isRunning: false, startedAt: null, lastDurationMs: durationMs });
+    const segmentMs = endedAt - startedAt;
+    const priorAccumulated = (mine.accumulatedDate === today) ? (mine.accumulatedMs || 0) : 0;
+    const newAccumulated = priorAccumulated + segmentMs;
+
+    // Stop the clock immediately for both users. The cumulative total is
+    // saved here, so the next Start press continues from this exact point.
+    myRef.update({ isRunning: false, startedAt: null, accumulatedMs: newAccumulated, accumulatedDate: today });
+
     pendingStop = { startedAt, endedAt };
-    openNoteModal(durationMs);
+    openNoteModal(segmentMs);
   }
 }
 
@@ -284,7 +288,7 @@ function finishStop(skipped) {
       date: entry.date,
       startTime: entry.startTime,
       endTime: entry.endTime,
-      durationMinutes: entry.durationMinutes,
+      durationSeconds: entry.durationSeconds,
       type,
       note,
       createdAt: Date.now()
@@ -327,7 +331,7 @@ function makeEntry(s, e, sessionId) {
     date: dateKey(s),
     startTime: s,
     endTime: e,
-    durationMinutes: Math.round((e - s) / 60000)
+    durationSeconds: Math.round((e - s) / 1000)
   };
 }
 
@@ -373,7 +377,7 @@ function renderLogs() {
         <div class="log-top">
           <span class="log-title">Log ${logNumber}</span>
           <span class="log-date">${entry.date}</span>
-          <span class="log-duration">${formatMinutes(entry.durationMinutes)}</span>
+          <span class="log-duration">${formatHMS(entry.durationSeconds)}</span>
         </div>
         <div class="log-meta">${escapeHtml(entry.note || '(no note)')}</div>
         <div class="log-meta">${timeRange} \u00b7 ${entry.type === 'break' ? 'Break' : 'Study'}</div>
@@ -386,14 +390,15 @@ function renderLogs() {
 }
 
 function renderTotal(list) {
-  const totalMinutes = list.reduce((sum, l) => sum + l.durationMinutes, 0);
-  el('total-banner').textContent = 'Total: ' + formatMinutes(totalMinutes);
+  const totalSeconds = list.reduce((sum, l) => sum + (l.durationSeconds || 0), 0);
+  el('total-banner').textContent = 'Total: ' + formatHMS(totalSeconds);
 }
 
-function formatMinutes(mins) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h}h ${m}m`;
+function formatHMS(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${h}h ${m}m ${s}s`;
 }
 
 function formatTime(ms) {
