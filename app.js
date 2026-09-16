@@ -86,61 +86,84 @@ function generateRoomCode() {
   return code;
 }
 
-function tryGenerateUniqueCode(callback, attempts = 0) {
+async function generateUniqueCode(attempts = 0) {
   const code = generateRoomCode();
-  db.ref('rooms/' + code).once('value').then(snap => {
-    if (snap.exists() && attempts < 5) {
-      tryGenerateUniqueCode(callback, attempts + 1);
-    } else {
-      callback(code);
-    }
-  }).catch(err => showError('Could not reach the database: ' + err.message));
+  const snap = await db.ref('rooms/' + code).once('value');
+  if (snap.exists() && attempts < 5) return generateUniqueCode(attempts + 1);
+  return code;
 }
 
-function handleCreateRoom() {
+async function handleCreateRoom() {
   const name = el('create-name').value.trim();
   if (!name) return showError('Please enter your name.');
   showError('');
+  setButtonsDisabled(true);
+  showLoading('Creating your room...');
 
-  tryGenerateUniqueCode(code => {
-    db.ref('rooms/' + code).set({
+  try {
+    const code = await generateUniqueCode();
+    await db.ref('rooms/' + code).set({
       createdAt: Date.now(),
       userA: { name, isRunning: false, startedAt: null }
-    }).then(() => {
-      state.roomCode = code;
-      state.mySlot = 'userA';
-      state.friendSlot = 'userB';
-      saveSession(code, 'userA');
-      el('room-code-display').textContent = code;
-      showScreen('code-screen');
-    }).catch(err => showError('Could not create room: ' + err.message));
-  });
+    });
+    state.roomCode = code;
+    state.mySlot = 'userA';
+    state.friendSlot = 'userB';
+    saveSession(code, 'userA');
+    el('room-code-display').textContent = code;
+    showScreen('code-screen');
+  } catch (err) {
+    showError('Could not create room: ' + err.message);
+  } finally {
+    setButtonsDisabled(false);
+    hideLoading();
+  }
 }
 
-function handleJoinRoom() {
+async function handleJoinRoom() {
   const code = el('join-code').value.trim().toUpperCase();
   const name = el('join-name').value.trim();
   if (!code || !name) return showError('Please enter a room code and your name.');
   showError('');
+  setButtonsDisabled(true);
+  showLoading('Joining room...');
 
-  const roomRef = db.ref('rooms/' + code);
-  roomRef.once('value').then(snap => {
-    if (!snap.exists()) return showError('Room not found. Check the code and try again.');
+  try {
+    const roomRef = db.ref('rooms/' + code);
+    const snap = await roomRef.once('value');
+    if (!snap.exists()) { showError('Room not found. Check the code and try again.'); return; }
+
     const data = snap.val();
-
     let slot = null;
     if (!data.userA) slot = 'userA';
     else if (!data.userB) slot = 'userB';
-    else return showError('This room already has two people in it.');
+    else { showError('This room already has two people in it.'); return; }
 
-    roomRef.child(slot).set({ name, isRunning: false, startedAt: null }).then(() => {
-      state.roomCode = code;
-      state.mySlot = slot;
-      state.friendSlot = slot === 'userA' ? 'userB' : 'userA';
-      saveSession(code, slot);
-      enterDashboard();
-    }).catch(err => showError('Could not join room: ' + err.message));
-  }).catch(err => showError('Could not reach the database: ' + err.message));
+    await roomRef.child(slot).set({ name, isRunning: false, startedAt: null });
+    state.roomCode = code;
+    state.mySlot = slot;
+    state.friendSlot = slot === 'userA' ? 'userB' : 'userA';
+    saveSession(code, slot);
+    enterDashboard();
+  } catch (err) {
+    showError('Could not join room: ' + err.message);
+  } finally {
+    setButtonsDisabled(false);
+    hideLoading();
+  }
+}
+
+function setButtonsDisabled(disabled) {
+  el('create-room-btn').disabled = disabled;
+  el('join-room-btn').disabled = disabled;
+}
+
+function showLoading(text) {
+  el('loading-text').textContent = text;
+  el('loading-overlay').classList.remove('hidden');
+}
+function hideLoading() {
+  el('loading-overlay').classList.add('hidden');
 }
 
 function copyRoomCode() {
@@ -148,11 +171,21 @@ function copyRoomCode() {
 }
 
 // ====== Dashboard ======
+let roomLoaded = false;
+let logsLoaded = false;
+
 function enterDashboard() {
   showScreen('dashboard-screen');
   el('header-room-code').textContent = state.roomCode;
+  roomLoaded = false;
+  logsLoaded = false;
+  showLoading('Loading your room...');
   attachRoomListener();
   attachLogsListener();
+}
+
+function maybeHideDashboardLoading() {
+  if (roomLoaded && logsLoaded) hideLoading();
 }
 
 function attachRoomListener() {
@@ -161,6 +194,8 @@ function attachRoomListener() {
     state.room.userA = data.userA || null;
     state.room.userB = data.userB || null;
     renderTimers();
+    roomLoaded = true;
+    maybeHideDashboardLoading();
   });
 }
 
@@ -190,7 +225,12 @@ function updateTimerDisplay(elementId, userData) {
   const node = el(elementId);
   if (!node) return;
   if (userData && userData.isRunning && userData.startedAt) {
+    // Currently running: count up live.
     node.textContent = formatDuration(Date.now() - userData.startedAt);
+  } else if (userData && userData.lastDurationMs) {
+    // Stopped: stay frozen on the last completed session's time, instead of
+    // snapping back to 00:00:00. It only resets once a new session starts.
+    node.textContent = formatDuration(userData.lastDurationMs);
   } else {
     node.textContent = '00:00:00';
   }
@@ -210,14 +250,17 @@ function toggleMyTimer() {
   const myRef = db.ref('rooms/' + state.roomCode + '/' + state.mySlot);
 
   if (!mine || !mine.isRunning) {
-    myRef.update({ isRunning: true, startedAt: Date.now() });
+    // Starting a new session always begins counting from zero.
+    myRef.update({ isRunning: true, startedAt: Date.now(), lastDurationMs: null });
   } else {
     const startedAt = mine.startedAt;
     const endedAt = Date.now();
-    // Stop the clock immediately for both users, then collect the note.
-    myRef.update({ isRunning: false, startedAt: null });
+    const durationMs = endedAt - startedAt;
+    // Stop the clock immediately for both users, but keep showing the final
+    // time on-screen (frozen) instead of jumping back to 00:00:00.
+    myRef.update({ isRunning: false, startedAt: null, lastDurationMs: durationMs });
     pendingStop = { startedAt, endedAt };
-    openNoteModal(endedAt - startedAt);
+    openNoteModal(durationMs);
   }
 }
 
@@ -293,6 +336,8 @@ function attachLogsListener() {
   db.ref('rooms/' + state.roomCode + '/logs').on('value', snap => {
     state.logs = snap.val() || {};
     renderLogs();
+    logsLoaded = true;
+    maybeHideDashboardLoading();
   });
 }
 
@@ -325,7 +370,11 @@ function renderLogs() {
       div.className = 'log-entry';
       const timeRange = formatTime(entry.startTime) + ' \u2013 ' + formatTime(entry.endTime);
       div.innerHTML = `
-        <div class="log-top"><span>Log ${logNumber} \u00b7 ${entry.date}</span><span>${formatMinutes(entry.durationMinutes)}</span></div>
+        <div class="log-top">
+          <span class="log-title">Log ${logNumber}</span>
+          <span class="log-date">${entry.date}</span>
+          <span class="log-duration">${formatMinutes(entry.durationMinutes)}</span>
+        </div>
         <div class="log-meta">${escapeHtml(entry.note || '(no note)')}</div>
         <div class="log-meta">${timeRange} \u00b7 ${entry.type === 'break' ? 'Break' : 'Study'}</div>
       `;
